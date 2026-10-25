@@ -1,0 +1,27 @@
+meta {
+  name: chat-generica
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/chat
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "user_id": "bruno-generica",
+    "texto": "hola"
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.ruta: eq generica
+}

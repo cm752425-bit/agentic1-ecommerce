@@ -1,0 +1,1 @@
+"""Agente inicial de ejemplo."""

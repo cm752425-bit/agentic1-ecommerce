@@ -1,0 +1,18 @@
+# Entorno y secretros
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.langgraph_api/
+.pytest_cache/
+
+# Datos y artefactos locales
+data/
+.local/
+*.db
+*.sqlite
+*.sqlite3
+*.log
+*.jsonl
+*.pkl
+*.pickle
