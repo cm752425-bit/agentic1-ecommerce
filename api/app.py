@@ -3,11 +3,13 @@
 from contextlib import asynccontextmanager
 import logging
 import os
+import hmac
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
+import httpx
 from dotenv import load_dotenv
-from fastapi import Body, FastAPI, HTTPException, Request
+from fastapi import Body, FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
@@ -82,7 +84,7 @@ app = FastAPI(
     openapi_tags=[
         {"name": "salud", "description": "Disponibilidad de la API y modelo configurado."},
         {"name": "chat", "description": "Clasificación de mensajes con memoria por usuario."},
-        {"name": "telegram", "description": "Webhook reservado para la integración de Telegram."},
+        {"name": "telegram", "description": "Webhook de Telegram protegido por secreto."},
     ],
     lifespan=lifespan,
 )
@@ -134,7 +136,47 @@ def chat(body: ChatRequest, request: Request) -> ChatResponse:
         ) from None
 
 
+async def _send_telegram_message(chat_id: int | str, text: str) -> None:
+    token = os.getenv("TELEGRAM_TOKEN", "")
+    if not token:
+        logger.error("TELEGRAM_TOKEN no está configurado; no se pudo responder al chat %s", chat_id)
+        return
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(url, json={"chat_id": chat_id, "text": text})
+            response.raise_for_status()
+    except Exception:
+        logger.exception("Falló el envío de sendMessage al chat %s", chat_id)
+
+
 @app.post("/telegram", tags=["telegram"], include_in_schema=False)
-def telegram(payload: Annotated[Any, Body()] = None) -> dict[str, bool]:
-    """Acuse provisional; el procesamiento y la verificación llegan en la parte 5."""
+async def telegram(
+    payload: Annotated[Any, Body()] = None,
+    secret_header: Annotated[str | None, Header(alias="X-Telegram-Bot-Api-Secret-Token")] = None,
+) -> dict[str, bool]:
+    """Procesa un Update de Telegram y acusa recepción al webhook."""
+    configured_secret = os.getenv("TELEGRAM_SECRET", "")
+    if not configured_secret or not hmac.compare_digest(secret_header or "", configured_secret):
+        raise HTTPException(status_code=403, detail="Secreto de webhook inválido.")
+
+    message = payload.get("message") if isinstance(payload, dict) else None
+    chat = message.get("chat") if isinstance(message, dict) else None
+    chat_id = chat.get("id") if isinstance(chat, dict) else None
+    text = message.get("text") if isinstance(message, dict) else None
+    if chat_id is None or not isinstance(text, str) or not text.strip():
+        return {"ok": True}
+
+    try:
+        result = app.state.router_graph.invoke(
+            {"mensaje": text},
+            config={"configurable": {"thread_id": str(chat_id)}},
+        )
+        response_text = result["respuesta"]
+        logger.info("Telegram chat_id=%s ruta=%s", chat_id, result["ruta"])
+    except Exception:
+        logger.exception("Falló la invocación del router para Telegram chat_id=%s", chat_id)
+        response_text = "No pude procesar tu mensaje en este momento. Inténtalo nuevamente más tarde."
+
+    await _send_telegram_message(chat_id, response_text)
     return {"ok": True}

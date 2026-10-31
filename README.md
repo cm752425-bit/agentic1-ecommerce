@@ -153,35 +153,82 @@ Start-Process "https://NOMBRE_UNICO_DE_APP.herokuapp.com/docs"
 No configures secretos en archivos versionados. Heroku proporciona `$PORT`
 automáticamente; no hace falta añadirlo a `.env`.
 
-## Conectar Telegram
+## Telegram
 
-La ruta `POST /telegram` es provisional: hoy acepta JSON y responde
-`{"ok": true}`, pero todavía no procesa mensajes ni valida el secreto. Antes de
-usar un bot real debe implementarse la parte 5: verificar el encabezado
-`X-Telegram-Bot-Api-Secret-Token` contra `TELEGRAM_SECRET`, invocar `/chat` y
-responder mediante la API de Telegram.
+La integración usa únicamente `httpx`, sin librerías de bots. El webhook lee
+`message.chat.id` y `message.text`, ignora updates sin texto, verifica
+`X-Telegram-Bot-Api-Secret-Token` contra `TELEGRAM_SECRET`, invoca el router con
+`thread_id=chat_id` y envía la respuesta mediante `sendMessage`. Un secreto
+incorrecto devuelve `403`; los updates válidos reciben `200` incluso cuando se
+registra un error interno.
 
-Cuando esa implementación esté terminada:
+Primero crea el bot hablando con `@BotFather`:
 
-1. Crea el bot con `@BotFather` y guarda el token únicamente en `TELEGRAM_TOKEN`.
-2. Genera un `TELEGRAM_SECRET` privado y configúralo también en Heroku.
-3. Configura el webhook HTTPS con estos comandos PowerShell, reemplazando los valores:
+1. Envía `/newbot` y sigue sus instrucciones.
+2. Copia el token entregado únicamente a `TELEGRAM_TOKEN` en `.env`.
+3. Elige un secreto privado y configúralo como `TELEGRAM_SECRET` en `.env`.
+
+Pasos finales, en orden, para Heroku:
+
+1. Configura los secretos en Heroku (ejecuta desde la raíz y reemplaza los valores):
 
 ```powershell
-$env:TELEGRAM_TOKEN = "TOKEN_ENTREGADO_POR_BOTFATHER"
-$env:TELEGRAM_SECRET = "SECRETO_LARGO_Y_ALEATORIO"
+heroku config:set TELEGRAM_TOKEN="TOKEN_ENTREGADO_POR_BOTFATHER" TELEGRAM_SECRET="SECRETO_LARGO_Y_ALEATORIO" --app NOMBRE_UNICO_DE_APP
+```
+
+2. Haz commit y push de los cambios a GitHub y a Heroku:
+
+```powershell
+git add api/app.py scripts/set_webhook.py scripts/webhook_info.py tests/test_api.py README.md
+git commit -m "connect telegram webhook"
+git push origin main
+git push heroku main
+```
+
+3. Configura el webhook con la URL pública de Heroku y confirma su estado:
+
+```powershell
 $env:PUBLIC_URL = "https://NOMBRE_UNICO_DE_APP.herokuapp.com"
-
-$body = @{ url = "$env:PUBLIC_URL/telegram"; secret_token = $env:TELEGRAM_SECRET } | ConvertTo-Json
-Invoke-RestMethod -Method Post -Uri "https://api.telegram.org/bot$env:TELEGRAM_TOKEN/setWebhook" -ContentType "application/json" -Body $body
-Invoke-RestMethod -Uri "https://api.telegram.org/bot$env:TELEGRAM_TOKEN/getWebhookInfo"
+python scripts/set_webhook.py
+python scripts/webhook_info.py
 ```
 
-Para eliminar el webhook:
+`set_webhook.py` usa `PUBLIC_URL + "/telegram"` y `TELEGRAM_SECRET`; `webhook_info.py`
+permite revisar `url`, `pending_update_count` y cualquier `last_error_message`.
+
+4. Escribe al bot los seis mensajes del prompt 2 y verifica en los logs que cada
+   ruta sea correcta:
 
 ```powershell
-Invoke-RestMethod -Method Post -Uri "https://api.telegram.org/bot$env:TELEGRAM_TOKEN/deleteWebhook"
+heroku logs --tail --app NOMBRE_UNICO_DE_APP
 ```
 
-No conectes Telegram al endpoint provisional: aún no valida
-`X-Telegram-Bot-Api-Secret-Token`.
+Las rutas esperadas son, en orden: `preventa`, `postventa`, `generica`,
+`preventa`, `postventa`, `generica`. La API registra líneas como
+`Telegram chat_id=... ruta=postventa`.
+
+5. Si no responde, revisa: el webhook debe apuntar exactamente a
+`https://NOMBRE_UNICO_DE_APP.herokuapp.com/telegram`, `TELEGRAM_SECRET` debe ser
+idéntico en Heroku y en `set_webhook.py`, y `TELEGRAM_TOKEN` debe ser el token
+actual entregado por BotFather. Ejecuta `python scripts/webhook_info.py` y revisa
+`last_error_message`.
+
+### Prueba local opcional
+
+Con `cloudflared` instalado, levanta la API local y crea un túnel:
+
+```powershell
+uvicorn api.app:app --reload --port 8000
+cloudflared tunnel --url http://localhost:8000
+```
+
+Usa la URL HTTPS que imprime `cloudflared` como `PUBLIC_URL`, con las variables
+`TELEGRAM_TOKEN` y `TELEGRAM_SECRET` cargadas en `.env`, y ejecuta:
+
+```powershell
+python scripts/set_webhook.py
+python scripts/webhook_info.py
+```
+
+Para volver al despliegue de Heroku, ejecuta de nuevo `set_webhook.py` con la URL
+de Heroku.

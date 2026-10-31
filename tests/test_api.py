@@ -75,16 +75,64 @@ def test_error_modelo_no_filtra_detalles(client, monkeypatch, caplog):
 
 
 @pytest.mark.parametrize("payload", [{"update_id": 123}, [1, 2], "hola", 42, False])
-def test_telegram_provisional(client, payload):
-    response = client.post("/telegram", json=payload)
+def test_telegram_ignora_updates_sin_texto(client, payload, monkeypatch):
+    monkeypatch.setenv("TELEGRAM_SECRET", "secreto-prueba")
+    response = client.post(
+        "/telegram", json=payload, headers={"X-Telegram-Bot-Api-Secret-Token": "secreto-prueba"}
+    )
     assert response.status_code == 200
     assert response.json() == {"ok": True}
 
 
-def test_telegram_acepta_null(client):
-    response = client.post("/telegram", content="null", headers={"Content-Type": "application/json"})
+def test_telegram_rechaza_secreto_invalido(client, monkeypatch):
+    monkeypatch.setenv("TELEGRAM_SECRET", "secreto-correcto")
+    response = client.post(
+        "/telegram",
+        json={},
+        headers={"X-Telegram-Bot-Api-Secret-Token": "secreto-incorrecto"},
+    )
+    assert response.status_code == 403
+
+
+def test_telegram_invoca_router_y_envia_respuesta(client, monkeypatch):
+    monkeypatch.setenv("TELEGRAM_SECRET", "secreto-prueba")
+    monkeypatch.setenv("TELEGRAM_TOKEN", "token-ficticio")
+    calls = []
+
+    def invoke(inputs, config):
+        calls.append((inputs, config))
+        return {"ruta": "postventa", "respuesta": "Respuesta de prueba."}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, url, json):
+            calls.append((url, json))
+            return FakeResponse()
+
+    monkeypatch.setattr(graph, "invoke", invoke)
+    monkeypatch.setattr("api.app.httpx.AsyncClient", lambda timeout: FakeClient())
+    update = {"message": {"chat": {"id": 4521}, "text": "Mi pedido llegó roto"}}
+    response = client.post(
+        "/telegram", json=update, headers={"X-Telegram-Bot-Api-Secret-Token": "secreto-prueba"}
+    )
     assert response.status_code == 200
     assert response.json() == {"ok": True}
+    assert calls == [
+        ({"mensaje": "Mi pedido llegó roto"}, {"configurable": {"thread_id": "4521"}}),
+        (
+            "https://api.telegram.org/bottoken-ficticio/sendMessage",
+            {"chat_id": 4521, "text": "Respuesta de prueba."},
+        ),
+    ]
 
 
 def test_openapi_y_swagger(client):

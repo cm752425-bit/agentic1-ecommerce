@@ -4,10 +4,9 @@ Prepara el proyecto para GitHub:
 - Completa README.md con: qué hace el proyecto, cómo correr el router en local, cómo levantar la API, cómo correr las pruebas, cómo desplegar en Heroku y cómo conectar Telegram. Con los comandos exactos.
 - Ya creé en GitHub un repositorio VACÍO (sin README ni .gitignore). Abajo te pego, tal cual, los comandos que GitHub muestra en "…or push an existing repository from the command line". Úsalos exactamente así (la URL del remoto y la rama son esas, no las inventes):
 
-    [PEGA AQUÍ LOS COMANDOS QUE TE MUESTRA GITHUB, por ejemplo:]
-    git remote add origin https://github.com/TU_USUARIO/ecommerce-router.git
-    git branch -M main
-    git push -u origin main
+git remote add origin https://github.com/cm752425-bit/agentic1-ecommerce.git
+git branch -M main
+git push -u origin main
 
 - Antes de eso hace falta: git init, agregar todo y el primer commit con mensaje "router + api + telegram". Dame la secuencia completa en orden (init → add → commit → los comandos de GitHub). No los ejecutes: los corro yo.
 - Antes del commit, corre `git status` y confírmame que .env NO aparece en la lista.

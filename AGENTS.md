@@ -14,4 +14,4 @@
 - Leer la configuración desde variables de entorno; usar `python-dotenv` para cargar `.env` en local sin sobrescribir las variables del entorno.
 - Nunca incluir credenciales reales en el código, pruebas ni archivos versionados. Documentar las variables en `.env.example`.
 - Mantener `.env`, `.venv`, `__pycache__` y `.langgraph_api` en `.gitignore`.
-- En una futura integración de Telegram, verificar el encabezado `X-Telegram-Bot-Api-Secret-Token` contra `TELEGRAM_SECRET` antes de procesar cada webhook.
+- En la integración de Telegram, verificar el encabezado `X-Telegram-Bot-Api-Secret-Token` contra `TELEGRAM_SECRET` antes de procesar cada webhook.
